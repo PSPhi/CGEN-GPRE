@@ -102,3 +102,4 @@ if __name__ == '__main__':
     print('End of training | HOMO MAE {:4.6f} | HOMO RMSE {:4.6f}'.format(test_mae_loss0,test_mse_loss0**0.5))
     print('End of training | LUMO MAE {:4.6f} | LUMO RMSE {:4.6f}'.format(test_mae_loss1,test_mse_loss1**0.5))
     print('=' * 40)
+    
