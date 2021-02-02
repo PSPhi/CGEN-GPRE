@@ -1,10 +1,9 @@
 import torch
 import torch.nn.functional as F
+from torch_geometric.data import Data,DataLoader
 from rdkit import Chem,DataStructs
 from rdkit.Chem import AllChem
 import pandas as pd
-import numpy as np
-from run import run_pre,smiles_transfer
 
 
 def sample(gen_model,labels,batch_size):
@@ -78,6 +77,55 @@ def get_simi(sms,all_sms):
     return simis
 
 
+def smiles_transfer(smiles_list):
+    data_list=[]
+    word2idx, idx2word = torch.load("data/opv_dic.pt")
+    data_sm = tok(smiles_list, word2idx)
+    
+    for k in range(len(smiles_list)):
+        m=Chem.MolFromSmiles(smiles_list[k])
+        #m=Chem.AddHs(m)
+        n_atoms=len(m.GetAtoms())
+    
+        x=[]
+        edges_index=[]
+        edges_attr=[]
+        
+        for i in range(n_atoms):
+            atom_i=m.GetAtomWithIdx(i)
+            x.append([atom_i.GetAtomicNum()])
+
+            for j in range(n_atoms):
+                e_ij=m.GetBondBetweenAtoms(i,j)
+                if e_ij is not None:
+                    edges_index.append([i,j])
+                    bond_type=[int(e_ij.GetBondType()==x) for x in [Chem.rdchem.BondType.SINGLE,
+                            Chem.rdchem.BondType.DOUBLE,Chem.rdchem.BondType.TRIPLE,Chem.rdchem.BondType.AROMATIC]]
+                    edges_attr.append([bond_type.index(1)+1])
+
+        data_list += [Data(x=torch.LongTensor(x),edge_index=torch.LongTensor(edges_index).T,
+                        edges_attr=torch.LongTensor(edges_attr),sm=data_sm[k].unsqueeze(0))]
+        
+    return data_list
+
+
+def run_pre(data_list,model_path):
+    model = torch.load(model_path, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    model.eval()
+    
+    outs_h=[]
+    outs_l=[]
+    data_iter = DataLoader(data_list, 64, shuffle=False)
+    with torch.no_grad():
+        for data in data_iter:
+            outs = model(data.to(device))
+            outs_h += outs[:,0].view(-1).detach().cpu().numpy().tolist()
+            outs_l += outs[:,1].view(-1).detach().cpu().numpy().tolist()
+    return outs_h,outs_l
+
+
 if __name__ == "__main__":
 
     Labels = torch.rand([4000,2])
@@ -94,7 +142,7 @@ if __name__ == "__main__":
     df0 = df0[(df0['lumo']-df0['homo'])>0].reset_index(drop=True)
     all_sms = df0['smiles'].tolist()
 
-    gen = torch.load("results/cg_homo&lumo.pt")
+    gen = torch.load("results/cg_hl.pt")
     
     count=30
 
