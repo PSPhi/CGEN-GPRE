@@ -17,8 +17,7 @@ parser.add_argument('--levels', type=int, default=5, help='number of levels (def
 parser.add_argument('--nhid', type=int, default=256, help='number of hidden units per layer (default: 256)')
 #Predictionz
 parser.add_argument('--drop', type=float, default=0, help='drop applied to layers (default: 0)')
-parser.add_argument('--n_levels', type=int, default=5, help='number of levels (default: 5)')
 parser.add_argument('--h_size', type=int, default=18, help='size of atoms (default: 18)')
 parser.add_argument('--emb_h', type=int, default=32, help='size of atomic number embeddings (default: 32)')         
-parser.add_argument('--hid_size', type=int, default=64, help='number of hidden units per layer (default: 64)')
+parser.add_argument('--hid_size', type=int, default=128, help='number of hidden units per layer (default: 64)')
 

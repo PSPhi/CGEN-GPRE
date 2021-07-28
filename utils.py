@@ -1,7 +1,9 @@
 import torch
 import pandas as pd
 from rdkit import Chem
-from torch_geometric.data import Data
+from dgllife.data import MoleculeCSVDataset
+from functools import partial
+from dgllife.utils import smiles_to_bigraph, RandomSplitter
 
 
 class Dictionary(object):
@@ -102,37 +104,27 @@ class Corpus(object):
         return all_ids
 
 
-def smiles_transfer(df,sm_list,rand_index):
-    data_list=[]
-    
-    for s in rand_index:
-        m=Chem.MolFromSmiles(df.loc[s]['smiles'])
-        #m=Chem.AddHs(m)
-        n_atoms=len(m.GetAtoms())
-    
-        x=[]
-        edges_index=[]
-        edges_attr=[]
-        
-        for i in range(n_atoms):
-            atom_i=m.GetAtomWithIdx(i)
-            x.append([atom_i.GetAtomicNum()])
+def featurize_atoms(mol):
+    feats = []
+    for atom in mol.GetAtoms():
+        feats.append(atom.GetAtomicNum())
+    return {'atomic': torch.tensor(feats).long()}
 
-            for j in range(n_atoms):
-                e_ij=m.GetBondBetweenAtoms(i,j)
-                if e_ij is not None:
-                    edges_index.append([i,j])
-                    bond_type=[int(e_ij.GetBondType()==x) for x in [Chem.rdchem.BondType.SINGLE,
-                               Chem.rdchem.BondType.DOUBLE,Chem.rdchem.BondType.TRIPLE,Chem.rdchem.BondType.AROMATIC]]
-                    edges_attr.append([bond_type.index(1)+1])
+def featurize_edges(mol, self_loop=True):
+    feats = []
+    num_atoms = mol.GetNumAtoms()
+    for i in range(num_atoms):
+        for j in range(num_atoms):
+            e_ij = mol.GetBondBetweenAtoms(i,j)
+            if e_ij is None:
+                bond_type = None
+            else:
+                bond_type = e_ij.GetBondType()
 
-        y=[[data.loc[s]['homo'], data.loc[s]['lumo'],data.loc[s]['homo_calib'], 
-            data.loc[s]['lumo_calib'],data.loc[s]['PCE'], data.loc[s]['PCE_calib']]]
-
-        data_list += [Data(x=torch.LongTensor(x),edge_index=torch.LongTensor(edges_index).T,edges_attr=torch.LongTensor(edges_attr),
-                           y=torch.Tensor(y),sm=torch.LongTensor([sm_list[s]]))]
-        
-    return data_list
+            if i != j or self_loop:
+                feats.append([float(bond_type == x)for x in (None, Chem.rdchem.BondType.SINGLE,
+                              Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE, Chem.rdchem.BondType.AROMATIC)])
+    return {'dist': torch.tensor(feats).long()}
 
 
 if __name__ == "__main__":
@@ -153,7 +145,13 @@ if __name__ == "__main__":
     print(Inputs[0],Inputs.size(),Targets[0],Targets.size())
     torch.save([Inputs,Targets],"data/opv_smiles.pt")
 
-    data_list=smiles_transfer(data,corpus.all,rand_index)
-    print(len(data_list),data_list[0])
-    torch.save(data_list, "data/opv_graph.pt")
+    dataset=MoleculeCSVDataset(df=data,
+                               smiles_to_graph=partial(smiles_to_bigraph, add_self_loop=True),
+                               node_featurizer=featurize_atoms,
+                               edge_featurizer=None,
+                               smiles_column='smiles',
+                               cache_file_path='data/graph.pt')
+    
+    train_set, val_set, test_set = RandomSplitter.train_val_test_split(dataset, frac_train=0.8, frac_val=0.1, frac_test=0.1)
+    torch.save([train_set,val_set,test_set], "data/opv_graph.pt")
     

@@ -5,22 +5,28 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from model import PRE
-from torch_geometric.data import DataLoader
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import dgl
 
 
 def train(train_iter):
     model.train()
     total_loss = 0
     for data in train_iter:
-        data=data.to(device)
+        smiles, bg, labels, masks = data
+        bg, labels, masks = bg.to(device), labels.to(device), masks.to(device)
+        node_feats = bg.ndata.pop('atomic')
+        # edge_feats = bg.edata.pop('e').to(device)
+        
         optimizer.zero_grad()
-        loss = F.mse_loss(model(data),data.y[:,args.property_n])
+        outputs = model(bg, node_feats.to(device))
+        loss = (F.mse_loss(outputs,labels[:,args.property_n])* (masks != 0).float()).mean()
         loss.backward()
-        total_loss += loss.item()*data.num_graphs
+        total_loss += loss.item()
         optimizer.step()  
 
-    return total_loss/len(train_iter.dataset)
+    return total_loss/len(train_iter)
 
 
 def evaluate(data_iter):
@@ -28,11 +34,16 @@ def evaluate(data_iter):
         model.eval()
         total_loss = 0
         for data in data_iter:
-            data = data.to(device)
-            loss = F.mse_loss(model(data),data.y[:,args.property_n])
-            total_loss += loss.item()*data.num_graphs
+            smiles, bg, labels, masks = data
+            bg, labels, masks = bg.to(device), labels.to(device), masks.to(device)
+            node_feats = bg.ndata.pop('atomic')
+            # edge_feats = bg.edata.pop('e').to(device)
+            
+            outputs = model(bg, node_feats.to(device))
+            loss = (F.mse_loss(outputs,labels[:,args.property_n])* (masks != 0).float()).mean()
+            total_loss += loss.item()
 
-    return total_loss/len(data_iter.dataset)
+    return total_loss/len(data_iter)
 
 
 def test(data_iter):
@@ -43,14 +54,33 @@ def test(data_iter):
         total_mse_loss0 = 0
         total_mse_loss1 = 0
         for data in data_iter:
-            data = data.to(device)
-            output=model(data)
-            total_mae_loss0 +=(output[:,0] - data.y[:,0]).abs().sum().item()
-            total_mae_loss1 +=(output[:,1] - data.y[:,1]).abs().sum().item()
-            total_mse_loss0 += F.mse_loss(output[:,0],data.y[:,0]).item()*data.num_graphs
-            total_mse_loss1 += F.mse_loss(output[:,1],data.y[:,1]).item()*data.num_graphs
-    return total_mae_loss0/len(data_iter.dataset),total_mae_loss1/len(data_iter.dataset),total_mse_loss0/len(data_iter.dataset),total_mse_loss1/len(data_iter.dataset)
+            smiles, bg, labels, masks = data
+            bg, labels, masks = bg.to(device), labels.to(device), masks.to(device)
+            node_feats = bg.ndata.pop('atomic')
+            # edge_feats = bg.edata.pop('e').to(device)
 
+            outputs=model(bg, node_feats.to(device))
+            total_mae_loss0 +=(outputs[:,0] - labels[:,0]).abs().mean().item()
+            total_mae_loss1 +=(outputs[:,1] - labels[:,1]).abs().mean().item()
+            total_mse_loss0 += F.mse_loss(outputs[:,0],labels[:,0]).item()
+            total_mse_loss1 += F.mse_loss(outputs[:,1],labels[:,1]).item()
+    return total_mae_loss0/len(data_iter),total_mae_loss1/len(data_iter),total_mse_loss0/len(data_iter),total_mse_loss1/len(data_iter)
+
+def collate_molgraphs(data):
+
+    smiles, graphs, labels, masks = map(list, zip(*data))
+
+    bg = dgl.batch(graphs)
+    bg.set_n_initializer(dgl.init.zero_initializer)
+    bg.set_e_initializer(dgl.init.zero_initializer)
+    labels = torch.stack(labels, dim=0)
+
+    if masks is None:
+        masks = torch.ones(labels.shape)
+    else:
+        masks = torch.stack(masks, dim=0)
+
+    return smiles, bg, labels, masks
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prediction Modeling',parents=[config.parser])
@@ -61,12 +91,12 @@ if __name__ == '__main__':
     torch.manual_seed(1024)
     torch.cuda.manual_seed(1024)
 
-    data_list = torch.load("data/opv_graph.pt")
-    train_iter = DataLoader(data_list[:-10000], args.batch_size, shuffle=True)
-    val_iter = DataLoader(data_list[-10000:-5000], args.batch_size, shuffle=False)
-    test_iter = DataLoader(data_list[-5000:], args.batch_size, shuffle=False)
+    train_set, val_set, test_set  = torch.load("data/opv_graph.pt")
+    train_iter = DataLoader(train_set, args.batch_size, shuffle=True, collate_fn=collate_molgraphs)
+    val_iter = DataLoader(val_set, args.batch_size, shuffle=False, collate_fn=collate_molgraphs)
+    test_iter = DataLoader(test_set, args.batch_size, shuffle=False, collate_fn=collate_molgraphs)
     
-    model = PRE(h_size=args.h_size,emb_h=args.emb_h,dim=args.hid_size,n_levels=args.n_levels,dropout=args.drop,out_size=len(args.property_n))
+    model = PRE(h_size=args.h_size,emb_h=args.emb_h,dim=args.hid_size)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)

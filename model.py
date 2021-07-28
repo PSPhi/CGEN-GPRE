@@ -2,9 +2,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm
-from torch_geometric.nn import GATConv
-from torch_scatter import scatter_add
-from torch_geometric.utils import softmax
+from dgllife.model.gnn.gat import GAT
+from dgl.readout import softmax_nodes,sum_nodes
 
 
 class ConvLayer(nn.Module):
@@ -93,65 +92,47 @@ class GEN(nn.Module):
         return o.contiguous()
 
 
-class GlobalAttention(torch.nn.Module):
-
-    def __init__(self, gate_nn, nn=None):
-        super(GlobalAttention, self).__init__()
+class GlobalAttentionPooling(nn.Module):
+    
+    def __init__(self, gate_nn, feat_nn=None):
+        super(GlobalAttentionPooling, self).__init__()
         self.gate_nn = gate_nn
-        self.nn = nn
-        self.gate, self.x = (None, None)
-        self.reset_parameters()
+        self.feat_nn = feat_nn
+        self.gate, self.feat = (None, None)
 
-    def reset_parameters(self):
-        self.reset(self.gate_nn)
-        self.reset(self.nn)
+    def forward(self, graph, feat):
+        
+        with graph.local_scope():
+            gate = self.gate_nn(feat)
+            assert gate.shape[-1] == 1, "The output of gate_nn should have size 1 at the last axis."
+            feat = self.feat_nn(feat) if self.feat_nn else feat
 
-    def reset(self, nn):
+            graph.ndata['gate'] = gate
+            gate = softmax_nodes(graph, 'gate')
+            graph.ndata.pop('gate')
 
-        def _reset(item):
-            if hasattr(item, 'reset_parameters'):
-                item.reset_parameters()
+            self.gate, self.feat = gate, feat 
 
-        if nn is not None:
-            if hasattr(nn, 'children') and len(list(nn.children())) > 0:
-                for item in nn.children():
-                    _reset(item)
+            graph.ndata['r'] = feat * gate
+            readout = sum_nodes(graph, 'r')
+            graph.ndata.pop('r')
 
-            else:
-                _reset(nn)
-
-    def forward(self, x, batch, out_size, size=None):
-        x = x.unsqueeze(-1) if x.dim() == 1 else x
-        size = batch[(-1)].item() + 1 if size is None else size
-        gate = self.gate_nn(x).view(-1, out_size)
-        x = self.nn(x) if self.nn is not None else x
-        if not (gate.dim() == x.dim() and gate.size(0) == x.size(0)):
-            raise AssertionError
-        gate = softmax(gate, batch, num_nodes=size)
-        self.gate, self.x = gate, x
-        out = scatter_add((gate * x), batch, dim=0, dim_size=size)
-        return out
-
-    def __repr__(self):
-        return '{}(gate_nn={}, nn={})'.format(self.__class__.__name__, self.gate_nn, self.nn)
+            return readout
 
 
 class PRE(torch.nn.Module):
 
-    def __init__(self, h_size, emb_h, dim, n_levels, dropout, out_size):
+    def __init__(self, h_size, emb_h, dim):
         super(PRE, self).__init__()
         self.emb_h = nn.Embedding(h_size, emb_h)
-        self.n_levles = n_levels
-        self.convs = nn.ModuleList([GATConv(emb_h, dim, heads=8, dropout=dropout) if i == 0 else 
-                                    GATConv(dim * 8, dim, heads=1, concat=False, dropout=dropout) if i == self.n_levles else 
-                                    GATConv(dim * 8, dim * 2, heads=4, dropout=dropout) for i in range(self.n_levles + 1)])
-        self.global_atten = GlobalAttention(nn.Linear(dim, out_size), nn.Linear(dim, out_size))
-        self.out_size=out_size
+        self.convs = GAT(emb_h,hidden_feats=[dim,dim*2,dim*2,dim*2,dim*2,dim],num_heads=[8,4,4,4,4,1],
+                         agg_modes=['flatten','flatten','flatten','flatten','flatten','mean'])
+        self.global_atten0 = GlobalAttentionPooling(nn.Linear(dim, 1), nn.Linear(dim, 1))
+        self.global_atten1 = GlobalAttentionPooling(nn.Linear(dim, 1), nn.Linear(dim, 1))
 
-    def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
-        x = self.emb_h(x.squeeze())
-        for i in range(self.n_levles+1):
-            x = F.relu(self.convs[i](x, edge_index))
-        x = self.global_atten(x, batch, self.out_size)
-        return x
+    def forward(self, bg, feats):
+        feats = self.emb_h(feats)
+        feats = self.convs(bg,feats)
+        x0 = self.global_atten0(bg,feats)
+        x1 = self.global_atten1(bg,feats)
+        return torch.cat((x0,x1),dim=-1)
