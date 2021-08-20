@@ -3,12 +3,12 @@ import torch.nn.functional as F
 from rdkit import Chem,DataStructs
 from rdkit.Chem import AllChem
 import pandas as pd
-from utils import tok,featurize_atoms
+from utils import process,featurize_atoms
 from dgllife.utils import smiles_to_bigraph
 
 
 def tok(ms, word2idx):
-    # transfer SMILES to tensor
+    # smiles to tensor
     all_ids = []
     all_smiles = process(ms)
     max_length = max([len(smiles) for smiles in all_smiles])+1
@@ -26,6 +26,7 @@ def tok(ms, word2idx):
 
 
 def ts2sms(tensors,idx2word):
+    # tensors to smiles
     smiles=[]
     idxs=[]
     for i in range(len(tensors)):
@@ -160,7 +161,7 @@ if __name__ == "__main__":
     count=30
 
     for i in range(count):
-        gen_samples = sample(gen, Labels, batch_size=64, word2idx, device=device)
+        gen_samples = sample(gen, Labels, batch_size=64, word2idx=word2idx, device=device)
         sam_smiles,idxs = ts2sms(gen_samples,idx2word) 
         homo_pre, lumo_pre = run_pre(sam_smiles,"results/pre_hl.pt",device=device)
         df.loc[idxs,'smiles'+str(i)]=sam_smiles
