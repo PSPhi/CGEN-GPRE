@@ -1,5 +1,19 @@
 # Molecular conditional generation and property analysis of non-fullerene acceptors with deep learning
-The molecular conditional generation and property prediction models are built with Pytorch (v1.7) and Deep Graph Library.
+The molecular conditional generation and property prediction models are built with Pytorch (>=v1.7) and DGL-LifeSci.
+
+## Structure
+`utils.py` : Dataset preparation and utils function.
+
+`model.py` : Generative and prediction model.
+
+`config.py` : Parameters of the two models.
+
+`cgen.py` : Code for training and testing the generative model.
+
+`pre.py` : Code for training and testing the prediction model.
+
+`sample.py` : Code for sampling.
+
 
 ## References
 [1] Peng, S.-P.; Zhao, Y. Convolutional Neural Networks for the Design and Analysis of Non-Fullerene Acceptors. J. Chem. Inf. Model. 2019, 59, 4993–5001. [[Paper]](https://pubs.acs.org/doi/abs/10.1021/acs.jcim.9b00732) [[Code]](https://github.com/PSPhi/CNN-for-NFA)

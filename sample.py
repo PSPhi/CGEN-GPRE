@@ -44,6 +44,7 @@ def ts2sms(tensors,idx2word):
 
 
 def sample(gen_model,labels,batch_size,device):
+    # generate molecules with labels
     num_samples = labels.size(0)
     samples = torch.zeros(num_samples, 160).long().to(device)
 
@@ -67,6 +68,7 @@ def sample(gen_model,labels,batch_size,device):
 
 
 def frag_sample(gen_model,ini_frag,labels,batch_size,word2idx,device):
+    #generate molecules with initial fragment and labels
     num_samples = labels.size(0)
     samples = torch.zeros(num_samples, 160).long().to(device)
 
@@ -91,6 +93,7 @@ def frag_sample(gen_model,ini_frag,labels,batch_size,word2idx,device):
 
 
 def get_prop(smiles_list,all_mols,df):
+    # get the property from source dataset
     homo_list=[]
     lumo_list=[]
     for smiles in smiles_list:
@@ -106,9 +109,11 @@ def get_prop(smiles_list,all_mols,df):
 
 
 def get_simi(sms,all_sms):
+    # the max similarity between one and dataset
     simis=[]
     all_mols = [Chem.MolFromSmiles(smi) for smi in all_sms]
     all_fps = [AllChem.GetMorganFingerprint(mol,2) for mol in all_mols]
+
     for sm in sms:
         fp=AllChem.GetMorganFingerprint(Chem.MolFromSmiles(sm),2) 
         simis+=[max(DataStructs.BulkDiceSimilarity(fp, all_fps))]
@@ -116,6 +121,7 @@ def get_simi(sms,all_sms):
 
 
 def run_pre(smiles_list,model_path,device):
+    #run for predicting HOMO and LUMO
     model = torch.load(model_path, map_location=device)
     model.eval()
     
@@ -158,10 +164,11 @@ if __name__ == "__main__":
 
     word2idx, idx2word = torch.load("data/opv_dic.pt")
     
-    count=30
+    count=10
 
     for i in range(count):
-        gen_samples = sample(gen, Labels, batch_size=64, word2idx=word2idx, device=device)
+        gen_samples = sample(gen, Labels, batch_size=64, device=device)
+        # gen_samples = frag_sample(gen, "N#Cc1c(cc2c(c1)ccs2)", Labels, batch_size=64, word2idx=word2idx, device=device)
         sam_smiles,idxs = ts2sms(gen_samples,idx2word) 
         homo_pre, lumo_pre = run_pre(sam_smiles,"results/pre_hl.pt",device=device)
         df.loc[idxs,'smiles'+str(i)]=sam_smiles
