@@ -7,6 +7,41 @@ from utils import tok,featurize_atoms
 from dgllife.utils import smiles_to_bigraph
 
 
+def tok(ms, word2idx):
+    # transfer SMILES to tensor
+    all_ids = []
+    all_smiles = process(ms)
+    max_length = max([len(smiles) for smiles in all_smiles])+1
+    for smiles in all_smiles:
+        ids = []
+        for word in smiles:
+            if word in word2idx:
+                ids += [word2idx[word]]
+        while len(ids) < max_length:
+            ids += [0]
+
+        all_ids.append(ids)
+
+    return torch.LongTensor(all_ids)
+
+
+def ts2sms(tensors,idx2word):
+    smiles=[]
+    idxs=[]
+    for i in range(len(tensors)):
+        sms=''
+        for t in tensors[i]:
+            if t!=0:
+                sms += idx2word[t] 
+            else:
+                break
+
+        if bool(Chem.MolFromSmiles(sms)):
+            smiles+=[sms]
+            idxs+=[i]
+    return smiles,idxs
+
+
 def sample(gen_model,labels,batch_size,device):
     num_samples = labels.size(0)
     samples = torch.zeros(num_samples, 160).long().to(device)
@@ -30,9 +65,8 @@ def sample(gen_model,labels,batch_size,device):
     return samples
 
 
-def frag_sample(gen_model,ini_frag,labels,batch_size,device):
+def frag_sample(gen_model,ini_frag,labels,batch_size,word2idx,device):
     num_samples = labels.size(0)
-    word2idx, idx2word = torch.load("data/opv_dic.pt")
     samples = torch.zeros(num_samples, 160).long().to(device)
 
     with torch.no_grad():
@@ -53,24 +87,6 @@ def frag_sample(gen_model,ini_frag,labels,batch_size,device):
             samples[i:min(i+batch_size,num_samples),:(inputs.size(1)-1)] = inputs[:,1:]
 
     return samples
-
-
-def ts2sms(tensors):
-    word2idx, idx2word = torch.load("data/opv_dic.pt")
-    smiles=[]
-    idxs=[]
-    for i in range(len(tensors)):
-        sms=''
-        for t in tensors[i]:
-            if t!=0:
-                sms += idx2word[t] 
-            else:
-                break
-
-        if bool(Chem.MolFromSmiles(sms)):
-            smiles+=[sms]
-            idxs+=[i]
-    return smiles,idxs
 
 
 def get_prop(smiles_list,all_mols,df):
@@ -138,12 +154,14 @@ if __name__ == "__main__":
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     gen = torch.load("results/cg_hl.pt")
+
+    word2idx, idx2word = torch.load("data/opv_dic.pt")
     
     count=30
 
     for i in range(count):
-        gen_samples = sample(gen, Labels, batch_size=64, device=device)
-        sam_smiles,idxs = ts2sms(gen_samples) 
+        gen_samples = sample(gen, Labels, batch_size=64, word2idx, device=device)
+        sam_smiles,idxs = ts2sms(gen_samples,idx2word) 
         homo_pre, lumo_pre = run_pre(sam_smiles,"results/pre_hl.pt",device=device)
         df.loc[idxs,'smiles'+str(i)]=sam_smiles
         df.loc[idxs,'homo_pre'+str(i)]=homo_pre

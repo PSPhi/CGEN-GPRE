@@ -7,6 +7,7 @@ from dgllife.utils import smiles_to_bigraph, RandomSplitter
 
 
 class Dictionary(object):
+    # SMILES character library
     def __init__(self):
         self.word2idx = {}
         self.idx2word = []
@@ -22,6 +23,7 @@ class Dictionary(object):
 
 
 def process(all_sms):
+    # SMILES process
     all_smiles = []
     element_table = ["Cl", "Br"]
     for i in range(len(all_sms)):
@@ -30,6 +32,7 @@ def process(all_sms):
         j = 0
         while j < len(sms):
             sms1 = []
+            # [**] as one character 
             if sms[j] == "[":
                 sms1.append(sms[j])
                 j = j + 1
@@ -50,6 +53,7 @@ def process(all_sms):
                     sms1.insert(0, sms[j - 1])
                     sms2 = ''.join(sms1)
 
+                # the element in element_table as one character
                 if sms2 not in element_table:
                     smiles.append(sms[j])
                     j = j + 1
@@ -61,24 +65,8 @@ def process(all_sms):
     return all_smiles
 
 
-def tok(ms, word2idx):
-    all_ids = []
-    all_smiles = process(ms)
-    max_length = max([len(smiles) for smiles in all_smiles])+1
-    for smiles in all_smiles:
-        ids = []
-        for word in smiles:
-            if word in word2idx:
-                ids += [word2idx[word]]
-        while len(ids) < max_length:
-            ids += [0]
-
-        all_ids.append(ids)
-
-    return torch.LongTensor(all_ids)
-
-
 class Corpus(object):
+    # creat dictionary and tokenize
     def __init__(self, sm_list):
         self.dictionary = Dictionary()
         self.all = self.tokenize(sm_list)
@@ -103,7 +91,7 @@ class Corpus(object):
         print(max_length,self.dictionary.word2idx)
         return all_ids
 
-
+# Obtain the features of atoms and bonds
 def featurize_atoms(mol):
     feats = []
     for atom in mol.GetAtoms():
@@ -131,6 +119,7 @@ if __name__ == "__main__":
     df = pd.read_csv('data/opv.csv',index_col=0)
     data = df[(df['lumo']-df['homo']>0)&(df['homo']>=-7.6)&(df['homo']<=-4.6)&(df['lumo']>=-4.6)&(df['lumo']<=-1.6)].reset_index(drop=True)
 
+    # SMILES to Dataset for generative model
     corpus = Corpus(data['smiles'])
     print(corpus.dictionary)
     torch.save([corpus.dictionary.word2idx, corpus.dictionary.idx2word], "data/opv_dic.pt")
@@ -145,12 +134,13 @@ if __name__ == "__main__":
     print(Inputs[0],Inputs.size(),Targets[0],Targets.size())
     torch.save([Inputs,Targets],"data/opv_smiles.pt")
 
+    # SMILES to graph-based dataset for prediction model with DGL-Life 
     dataset=MoleculeCSVDataset(df=data,
                                smiles_to_graph=partial(smiles_to_bigraph, add_self_loop=True),
                                node_featurizer=featurize_atoms,
                                edge_featurizer=None,
                                smiles_column='smiles',
-                               cache_file_path='data/graph.pt')
+                               cache_file_path='data/graph.pt') 
     
     train_set, val_set, test_set = RandomSplitter.train_val_test_split(dataset, frac_train=0.8, frac_val=0.1, frac_test=0.1)
     torch.save([train_set,val_set,test_set], "data/opv_graph.pt")

@@ -5,9 +5,8 @@ from torch.nn.utils import weight_norm
 from dgllife.model.gnn.gat import GAT
 from dgl.readout import softmax_nodes,sum_nodes
 
-
 class ConvLayer(nn.Module):
-
+    # Temporal CNN 
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2, model='Gen'):
         super(ConvLayer, self).__init__()
         self.conv = weight_norm(nn.Conv1d(n_inputs, (n_outputs * 2), kernel_size, stride=stride,
@@ -55,7 +54,7 @@ class Encoder(nn.Module):
 
 
 class NNet(nn.Module):
-
+    # MLP
     def __init__(self, n_in, n_out, hide=(64, 64, 8)):
         super(NNet, self).__init__()
         self.n_hide = len(hide)
