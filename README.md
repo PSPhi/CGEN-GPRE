@@ -1,4 +1,4 @@
-# Molecular conditional generation and property analysis of non-fullerene acceptors with deep learning
+# [Molecular conditional generation and property analysis of non-fullerene acceptors with deep learning](https://www.mdpi.com/1422-0067/22/16/9099)
 The molecular conditional generation and property prediction models are built with Pytorch (>=v1.7) and DGL-LifeSci.
 
 ## Structure
